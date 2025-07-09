@@ -36,7 +36,7 @@ from .utils.config import cfg
 torch.backends.cudnn.benchmark = True
 
 class DECA(nn.Module):
-    def __init__(self, config=None, device='cuda'):
+    def __init__(self, config=None, device='cpu'):
         super(DECA, self).__init__()
         if config is None:
             self.cfg = cfg
@@ -79,6 +79,7 @@ class DECA(nn.Module):
         self.E_detail = ResnetEncoder(outsize=self.n_detail).to(self.device)
         # decoders
         self.flame = FLAME(model_cfg).to(self.device)
+        print(model_cfg)
         if model_cfg.use_tex:
             self.flametex = FLAMETex(model_cfg).to(self.device)
         self.D_detail = Generator(latent_dim=self.n_detail+self.n_cond, out_channels=1, out_scale=model_cfg.max_z, sample_mode = 'bilinear').to(self.device)
@@ -86,7 +87,7 @@ class DECA(nn.Module):
         model_path = self.cfg.pretrained_modelpath
         if os.path.exists(model_path):
             print(f'trained model found. load {model_path}')
-            checkpoint = torch.load(model_path)
+            checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
             self.checkpoint = checkpoint
             util.copy_state_dict(self.E_flame.state_dict(), checkpoint['E_flame'])
             util.copy_state_dict(self.E_detail.state_dict(), checkpoint['E_detail'])
@@ -286,8 +287,8 @@ class DECA(nn.Module):
         texture: [3, h, w], tensor
         '''
         i = 0
-        vertices = opdict['verts'][i].cpu().numpy()
-        faces = self.render.faces[0].cpu().numpy()
+        vertices = opdict['verts'][i].cpu().detach().numpy()
+        faces = self.render.faces[0].cpu().detach().numpy()
         texture = util.tensor2image(opdict['uv_texture_gt'][i])
         uvcoords = self.render.raw_uvcoords[0].cpu().numpy()
         uvfaces = self.render.uvfaces[0].cpu().numpy()
@@ -299,15 +300,17 @@ class DECA(nn.Module):
                         uvfaces=uvfaces, 
                         normal_map=normal_map)
         # upsample mesh, save detailed mesh
-        texture = texture[:,:,[2,1,0]]
         normals = opdict['normals'][i].cpu().numpy()
-        displacement_map = opdict['displacement_map'][i].cpu().numpy().squeeze()
-        dense_vertices, dense_colors, dense_faces = util.upsample_mesh(vertices, normals, faces, displacement_map, texture, self.dense_template)
+        displacement_map = opdict['displacement_map'][i].cpu().detach().numpy().squeeze()
+        dense_vertices, dense_colors, dense_faces, uvcoords, uvnormal = util.upsample_mesh(vertices, normals, faces, displacement_map, texture, self.dense_template)
         util.write_obj(filename.replace('.obj', '_detail.obj'), 
                         dense_vertices, 
                         dense_faces,
-                        colors = dense_colors,
-                        inverse_face_order=True)
+                        texture=texture,
+                        uvcoords=uvcoords,
+                        uvfaces=dense_faces,
+                        normal_map= uvnormal,
+                        inverse_face_order=True )
     
     def run(self, imagepath, iscrop=True):
         ''' An api for running deca given an image path
