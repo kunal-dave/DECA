@@ -58,7 +58,11 @@ def upsample_mesh(vertices, normals, faces, displacement_map, texture_map, dense
     dense_colors = texture_map[y_coords[valid_pixel_ids].astype(int), x_coords[valid_pixel_ids].astype(int)]
     offsets = np.einsum('i,ij->ij', displacements, pixel_3d_normals)
     dense_vertices = pixel_3d_points + offsets
-    return dense_vertices, dense_colors, dense_faces
+    uvcoords = np.stack([
+        x_coords[valid_pixel_ids] / img_size,
+        1.0 - y_coords[valid_pixel_ids] / img_size  # flip Y axis for UVs
+    ], axis=-1)
+    return dense_vertices, dense_colors, dense_faces, uvcoords, pixel_3d_normals
 
 # borrowed from https://github.com/YadiraF/PRNet/blob/master/utils/write.py
 def write_obj(obj_name,
@@ -81,6 +85,7 @@ def write_obj(obj_name,
         texture: shape = (uv_size, uv_size, 3)
         uvcoords: shape = (nver, 2) max value<=1
     '''
+    detailed = False
     if os.path.splitext(obj_name)[-1] != '.obj':
         obj_name = obj_name + '.obj'
     mtl_name = obj_name.replace('.obj', '.mtl')
@@ -133,6 +138,7 @@ def write_obj(obj_name,
                 )
                 )
             # write mtl
+            print(obj_name)
             with open(mtl_name, 'w') as f:
                 f.write('newmtl %s\n' % material_name)
                 s = 'map_Kd {}\n'.format(os.path.basename(texture_name)) # map to image
